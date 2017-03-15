@@ -116,6 +116,16 @@ func (w *Webcam) SetImageFormat(f PixelFormat, width, height uint32) (PixelForma
 	}
 }
 
+func (w * Webcam) SetExposure(exposure int32) error {
+	err := setExposure(w.fd, &exposure)
+
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // Start streaming process
 func (w *Webcam) StartStreaming() error {
 

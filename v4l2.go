@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 	"unsafe"
 
-	"github.com/blackjack/webcam/ioctl"
+	"github.com/stanier/webcam/ioctl"
 	"golang.org/x/sys/unix"
 )
 
@@ -18,9 +18,31 @@ const (
 )
 
 const (
-	V4L2_FRMSIZE_TYPE_DISCRETE   uint32 = 1
-	V4L2_FRMSIZE_TYPE_CONTINUOUS uint32 = 2
-	V4L2_FRMSIZE_TYPE_STEPWISE   uint32 = 3
+	V4L2_CTRL_CLASS_USER		uint32 = 0x980000
+	V4L2_CID_BASE				uint32 = (V4L2_CTRL_CLASS_USER | 0x900)
+	V4L2_CTRL_CLASS_CAMERA 		uint32 = 0x9a0000
+	V4L2_CID_CAMERA_CLASS_BASE	uint32 = (V4L2_CTRL_CLASS_CAMERA | 0x900)
+	V4L2_CID_CAMERA_CLASS		uint32 = (V4L2_CTRL_CLASS_CAMERA | 1)
+)
+
+const (
+	V4L2_CID_EXPOSURE 				uint32 = V4L2_CID_BASE + 17
+	V4L2_CID_EXPOSURE_AUTO			uint32 = V4L2_CID_CAMERA_CLASS_BASE + 1
+	V4L2_CID_EXPOSURE_ABSOLUTE		uint32 = V4L2_CID_CAMERA_CLASS_BASE + 2
+	V4L2_CID_EXPOSURE_AUTO_PRIORITY uint32 = V4L2_CID_CAMERA_CLASS_BASE + 3
+)
+
+const (
+	V4L2_EXPOSURE_AUTO 				int32 = iota
+	V4L2_EXPOSURE_MANUAL			int32 = iota
+	V4L2_EXPOSURE_SHUTTER_PRIORITY	int32 = iota
+	V4L2_EXPOSURE_APERTURE_PRIORITY int32 = iota
+)
+
+const (
+	V4L2_FRMSIZE_TYPE_DISCRETE   uint32 = iota
+	V4L2_FRMSIZE_TYPE_CONTINUOUS uint32 = iota
+	V4L2_FRMSIZE_TYPE_STEPWISE   uint32 = iota
 )
 
 var (
@@ -37,6 +59,50 @@ var (
 	__p                    = unsafe.Pointer(uintptr(0))
 	NativeByteOrder        = getNativeByteOrder()
 )
+
+var (
+	VIDIOC_S_EXT_CTRLS = ioctl.IoRW(uintptr('V'), 72, unsafe.Sizeof(v4l2_ext_controls{}))
+)
+
+var (
+	VIDIOC_S_CTRL = ioctl.IoRW(uintptr('V'), 28, unsafe.Sizeof(v4l2_control{}))
+)
+
+type v4l2_ext_control struct {
+	id			uint32
+	size		uint32
+	reserved2	[1]uint32
+	value		int32
+}
+
+type v4l2_ext_controls struct {
+	ctrl_class 	uint32 // Set to V4L2_CTRL_CLASS_CAMERA
+	//which 		uint32 We shouldn't need this yet
+	count 		uint32
+	error_idx 	uint32
+	reserved 	[2]uint32 // Set to 0
+	controls	*[1]v4l2_ext_control
+	/*controls 	struct {
+		// I only need one of these for the required function, others will
+		//	be added later
+		/*id			uint32
+		size		uint32
+		reserved [1]uint32
+		value		int32
+		value64		int64
+		_string		[]byte
+		p_u8		*uint8
+		p_u16		*uint16
+		p_u32		*uint32
+		// Anonymous pointer to compound excluded, because that's not how you
+		//	should be using pointers
+	}*/
+}
+
+type v4l2_control struct {
+	id				uint32
+	value			int32
+}
 
 type v4l2_capability struct {
 	driver       [16]uint8
@@ -223,8 +289,39 @@ func getFrameSize(fd uintptr, index uint32, code uint32) (frameSize FrameSize, e
 	return
 }
 
-func setImageFormat(fd uintptr, formatcode *uint32, width *uint32, height *uint32) (err error) {
+func setExposure(fd uintptr, exposure_value *int32) error {
+	/*exposure := &v4l2_control{
+		id: V4L2_CID_EXPOSURE_ABSOLUTE,
+		value: *exposure_value,
+	}
 
+	err := ioctl.Ioctl(fd, VIDIOC_S_CTRL, uintptr(unsafe.Pointer(exposure)))*/
+
+	controls := &v4l2_ext_controls{
+		ctrl_class: V4L2_CTRL_CLASS_CAMERA,
+		count: 		uint32(1),
+		//error_idx: 	0,
+		reserved: 	[2]uint32{uint32(0), uint32(0)},
+		controls: 	&[1]v4l2_ext_control{
+			v4l2_ext_control{
+				id:			V4L2_CID_EXPOSURE_AUTO,
+				size:		uint32(unsafe.Sizeof(uintptr(*exposure_value))),
+				reserved2: 	[1]uint32{0},
+				value:		*exposure_value,
+			},
+		},
+	}
+
+	err := ioctl.Ioctl(fd, VIDIOC_S_EXT_CTRLS, uintptr(unsafe.Pointer(controls)))
+
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func setImageFormat(fd uintptr, formatcode *uint32, width *uint32, height *uint32) (err error) {
 	format := &v4l2_format{
 		_type: V4L2_BUF_TYPE_VIDEO_CAPTURE,
 	}
